@@ -38,7 +38,8 @@ vec* build_vec(uint size) {
 }
 
 void vec::clear() {
-    if (data != NULL) free(data);
+    free(data);
+    data = NULL;
     size = 0;
 }
 

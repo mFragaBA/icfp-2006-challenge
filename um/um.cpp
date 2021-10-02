@@ -18,7 +18,7 @@ using std::vector;
 typedef unsigned int platter;
 typedef unsigned int uint;
 
-#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG
     #define TRY_DBG(fmt, ...) printf(fmt, ##__VA_ARGS__);
@@ -101,7 +101,7 @@ struct vm {
     }
 
     inline uint _orth_a(platter p) {
-        return 7 & (p >> 25);
+        return (p & 0x0E000000U) >> 25;
     }
 };
 
@@ -134,7 +134,7 @@ void vm::spin_cycle() {
             case LOAD_PROGRAM: load_program(a, b, c); break;
 
             // Special Operators
-            case ORTHOGRAPHY: orthography(_orth_a(op), _orth_value(op)); break;
+            case ORTHOGRAPHY: orthography(_orth_a(operand), _orth_value(operand)); break;
         }
 
     }
@@ -215,7 +215,7 @@ void vm::load_program(uint a, uint b, uint c) {
 }
 
 inline void vm::orthography(uint a, uint value) {
-    printf("op orthography(%i, %i)\n", a, value);
+    // printf("op orthography(%i, %i)\n", a, value);
     registers[a] = value;
 }
 
@@ -226,15 +226,10 @@ inline void vm::orthography(uint a, uint value) {
 *       |b_1|b_2|b_3|b_4|
 */
 uint reverse_endianness(uint x) {
-    // return ((x & 0xFF000000U) >> 24)
-    //     | ((x & 0xFF0000U) >> 8)
-    //     | ((x & 0xFF00U) << 8)
-    //     | ((x & 0xFFU) << 24);
-
-    return ((x >> 24) & 0xFF) <<  0
-       | ((x >> 16) & 0xFF) <<  8
-       | ((x >>  8) & 0xFF) << 16
-       | ((x >>  0) & 0xFF) << 24;
+    return ((x & 0xFF000000U) >> 24)
+        | ((x & 0xFF0000U) >> 8)
+        | ((x & 0xFF00U) << 8)
+        | ((x & 0xFFU) << 24);
 }
 
 vec* read_file(char *filename) {
