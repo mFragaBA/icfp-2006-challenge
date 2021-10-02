@@ -101,18 +101,19 @@ struct vm {
     }
 
     inline uint _orth_a(platter p) {
-        return (p & 0x0E000000U) >> 25;
+        return 7 & (p >> 25);
     }
 };
 
 void vm::spin_cycle() {
     for(;;) {
-        auto op = _opcode((*program)[finger]);
+        auto operand = (*program)[finger]; 
+        auto op = _opcode(operand);
         //cerr << "op: " << op << '\n';
         finger++;
-        auto a = _a(op);
-        auto b = _b(op);
-        auto c = _c(op);
+        auto a = _a(operand);
+        auto b = _b(operand);
+        auto c = _c(operand);
 
         switch (op) {
             // Standard Operations
@@ -251,7 +252,7 @@ vec* read_file(char *filename) {
     vec* v = build_vec(filesize / sizeof(uint));
 
     FILE* file = fopen(filename, "rb");
-    fread(v->data, sizeof(uint), v->size, file);
+    size_t readbytes = fread(v->data, sizeof(uint)*v->size, 1, file);
     fclose(file);
 
     // fix endianness
