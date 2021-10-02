@@ -1,4 +1,4 @@
-um: um.cpp Makefile
+um: um.cpp vector.h Makefile
 	g++ -Wall -O3 -std=c++11 -m32 $< -o $@
 
 clean: 

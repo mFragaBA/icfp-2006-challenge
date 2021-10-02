@@ -14,6 +14,10 @@ struct vec {
     uint size;
     uint* data; 
 
+    // transfers ownership of d
+    vec(uint s, uint* d) : size(s), data(d) {};
+    ~vec() { clear(); }
+
     inline uint& operator[](uint i) {
         return data[i];
     }
@@ -22,19 +26,23 @@ struct vec {
     void resize(uint);
 };
 
-vec build_vec(uint size) {
-    return {
+vec* build_vec(uint size) {
+    vec* v = new vec(
         size,
         (uint*)calloc(size*sizeof(uint), sizeof(uint)) 
-    };
+    );
+
+    memset(v->data, 0, size * sizeof(uint));
+
+    return v;
 }
 
 void vec::clear() {
-    free(data);
+    if (data != NULL) free(data);
     size = 0;
 }
 
 void vec::resize(uint size) {
-    data = (uint*)reallocarray(data, size, sizeof(uint));
-    size = size;
+    this->data = (uint*)reallocarray(this->data, size, sizeof(uint));
+    this->size = size;
 }
