@@ -1,12 +1,14 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <list>
 #include <sys/stat.h>
 #include <memory.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "vector.h"
 
@@ -14,6 +16,7 @@ using std::cerr;
 using std::cout;
 using std::cin;
 using std::vector;
+using std::list;
 
 typedef unsigned int platter;
 typedef unsigned int uint;
@@ -21,24 +24,32 @@ typedef unsigned int uint;
 // #define DEBUG
 
 #ifdef DEBUG
-    #define TRY_DBG(fmt, ...) printf(fmt, ##__VA_ARGS__);
+    #define TRY_DBG(fmt, ...) printf(fmt, ##__VA_ARGS__);print_state();std::flush(cout);
 #else
     #define TRY_DBG(fmt, ...) ;
 #endif
 
-#define DBG_OP TRY_DBG("op %s(%i, %i, %i)\n", __FUNCTION__, a, b, c)
+#define DBG_OP TRY_DBG("op %s(%u, %u, %u)\n", __FUNCTION__, a, b, c)
 
 struct vm {
     public:
     
     // transfers ownership of prog
     vm(vec* prog) : 
-    program(prog), 
     finger(0),
     registers{0, 0, 0, 0, 0, 0, 0, 0}
-    { }
+    {
+        segments.push_back(prog);
+    }
     ~vm() {
-        program->clear(); free(program);
+        for (vec* v : segments) {
+            v->clear();
+            free(v);
+        }
+    }
+
+    void print_state() {
+        printf("{finger:%u, regs:[%u, %u, %u, %u, %u, %u, %u, %u]}\n", finger, registers[0], registers[1], registers[2], registers[3], registers[4], registers[5], registers[6], registers[7]);
     }
 
     void spin_cycle();
@@ -62,8 +73,10 @@ struct vm {
     };
 
     platter registers[8];
-    vec* program;
     uint finger;
+
+    vector<vec*> segments;
+    list<uint> free_segments;
 
     inline void conditional_move(uint, uint, uint);
     inline void array_index(uint, uint, uint);
@@ -97,23 +110,35 @@ struct vm {
     }
 
     inline uint _orth_value(platter p) {
-        return (p & 0x01FFFFFFU);
+        return (p) & 0b1111111111111111111111111;
     }
 
     inline uint _orth_a(platter p) {
-        return (p & 0x0E000000U) >> 25;
+        return ((p) >> 25) & 0b111;
     }
 };
 
 void vm::spin_cycle() {
     for(;;) {
-        auto operand = (*program)[finger]; 
+        // printf("%i %i %i\n", (uint)segments.size(), finger, segments[0]->size);
+        // std::flush(cout);
+
+        assert(segments.size() > 0 && "segments array cannot be empty");
+        assert(finger < segments[0]->size && "Finger out of bounds!");
+        assert(segments[0]->size > 0 && "program array cannot be empty");
+
+    
+        auto operand = segments[0]->at(finger); 
+
         auto op = _opcode(operand);
         //cerr << "op: " << op << '\n';
-        finger++;
         auto a = _a(operand);
         auto b = _b(operand);
         auto c = _c(operand);
+        auto orth_a = _orth_a(operand);
+        auto orth_value = _orth_value(operand);
+
+        finger++;
 
         switch (op) {
             // Standard Operations
@@ -134,13 +159,13 @@ void vm::spin_cycle() {
             case LOAD_PROGRAM: load_program(a, b, c); break;
 
             // Special Operators
-            case ORTHOGRAPHY: orthography(_orth_a(operand), _orth_value(operand)); break;
+            case ORTHOGRAPHY: orthography(orth_a, orth_value); break;
+
+            default: assert(false && "unknown instruction");
         }
 
     }
 }
-
-#define arr(m) (m?*(vec*)m:*(vec*)program)
 
 inline void vm::conditional_move(uint a, uint b, uint c) {
     DBG_OP;
@@ -149,12 +174,12 @@ inline void vm::conditional_move(uint a, uint b, uint c) {
 
 inline void vm::array_index(uint a, uint b, uint c) {
     DBG_OP;
-    registers[a] = (arr(registers[b]))[registers[c]];
+    registers[a] = segments[registers[b]]->at(registers[c]);
 }
 
 inline void vm::array_amendment(uint a, uint b, uint c) {
     DBG_OP;
-    (arr(registers[a]))[registers[b]] = registers[c];
+    segments[registers[a]]->at(registers[b]) = registers[c];
 }
 
 inline void vm::addition(uint a, uint b, uint c) {
@@ -169,7 +194,8 @@ inline void vm::multiplication(uint a, uint b, uint c) {
 
 inline void vm::division(uint a, uint b, uint c) {
     DBG_OP;
-    if (registers[c]) registers[a] = registers[b] / registers[c];
+    assert(registers[c] != 0 && "Division by zero!");
+    registers[a] = registers[b] / registers[c];
 }
 
 inline void vm::nand(uint a, uint b, uint c) {
@@ -183,19 +209,33 @@ inline void vm::halt(uint a, uint b, uint c) {
 
 inline void vm::allocation(uint a, uint b, uint c) {
     DBG_OP;
-    registers[b] = (platter)build_vec(registers[c]);
+    uint addr;
+    if (free_segments.size() == 0) {
+        addr = segments.size();
+        segments.push_back(new vec(registers[c]));
+        assert( addr != 0 && "registers[b] cannot be assigned direction 0" );
+    } else {
+        addr = free_segments.front();
+        free_segments.pop_front();
+
+        segments[addr]->resize(registers[c]);
+        memset(segments[addr]->data, 0, segments[addr]->size * sizeof(uint));
+    }
+
+    registers[b] = addr;
 }
 
 inline void vm::abandonment(uint a, uint b, uint c) {
     DBG_OP;
-    ((vec*)registers[c])->clear();
-    delete((vec*)registers[c]);
+    assert(registers[c] != 0 && "Free of array zero!");
+    free_segments.push_back(registers[c]);
 }
 
 // Only values between 0 and 255 are allowed
 inline void vm::output(uint a, uint b, uint c) {
     DBG_OP;
-    putchar(registers[c]);
+    assert(registers[c] <= 255 && "Output of unknown character!");
+    putchar(registers[c]);fflush(stdout);
 }
 
 inline void vm::input(uint a, uint b, uint c) {
@@ -206,16 +246,18 @@ inline void vm::input(uint a, uint b, uint c) {
 void vm::load_program(uint a, uint b, uint c) {
     DBG_OP;
     if (registers[b]) {
-        uint newsize = ((vec*)registers[b])->size;
-        program->resize(newsize);
-        memcpy(program->data, ((vec*)registers[b])->data, newsize*sizeof(uint));
+        uint newsize = segments[registers[b]]->size;
+        segments[0]->resize(newsize);
+        memcpy(segments[0]->data, segments[registers[b]]->data, newsize*sizeof(uint));
     }
 
     finger = registers[c];
 }
 
 inline void vm::orthography(uint a, uint value) {
-    // printf("op orthography(%i, %i)\n", a, value);
+    #ifdef DEBUG
+        printf("op orthography(%u, %u)\n", a, value);print_state(); std::flush(cout);
+    #endif
     registers[a] = value;
 }
 
@@ -244,10 +286,10 @@ vec* read_file(char *filename) {
 
     filesize = s.st_size;
     cerr << "input file size: " << filesize << '\n';
-    vec* v = build_vec(filesize / sizeof(uint));
+    vec* v = new vec(filesize / sizeof(uint));
 
     FILE* file = fopen(filename, "rb");
-    size_t readbytes = fread(v->data, sizeof(uint)*v->size, 1, file);
+    fread(v->data, sizeof(uint)*v->size, 1, file);
     fclose(file);
 
     // fix endianness
